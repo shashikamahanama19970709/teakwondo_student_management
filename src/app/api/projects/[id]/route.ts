@@ -1,0 +1,495 @@
+import { NextRequest, NextResponse } from 'next/server'
+import connectDB from '@/lib/db-config'
+// Import models to ensure they're registered
+import { Subject } from '@/models/Subject'
+import { Certification } from '@/models/Certification'
+import { Project } from '@/models/Project'
+import { Task } from '@/models/Task'
+import { authenticateUser } from '@/lib/auth-utils'
+import { PermissionService } from '@/lib/permissions/permission-service'
+import { Permission, Role } from '@/lib/permissions/permission-definitions'
+import { Types, default as mongoose } from 'mongoose'
+import { User } from '@/models/User'
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await connectDB()
+
+    const authResult = await authenticateUser()
+    if ('error' in authResult) {
+      return NextResponse.json(
+        { error: authResult.error },
+        { status: authResult.status }
+      )
+    }
+
+    const { user } = authResult
+    const userId = user.id
+    const organizationId = user.organization
+    const projectId = params.id
+
+    // Get user document to check enrolled courses
+    const userDoc = await User.findById(userId)
+    if (!userDoc) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      )
+    }
+
+    // Find project (only non-deleted projects)
+    let projectQuery = Project.findOne({
+      _id: projectId,
+      organization: organizationId,
+      is_deleted: { $ne: true } // Only return non-deleted projects
+    })
+      .populate('createdBy', 'firstName lastName email')
+      .populate('teamMembers.memberId', 'firstName lastName email')
+      .populate('client', 'firstName lastName email')
+      .populate('certificates')
+
+    // Conditionally populate subjects if the model is registered
+    if (mongoose.models.Subject) {
+      projectQuery = projectQuery.populate('subjects')
+    }
+
+    const project = await projectQuery
+
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      )
+    }
+    // Check if user can access this project
+    const userRole = (user.role || '').toString() as Role
+    const rolePermissions = PermissionService.getGlobalPermissions(userRole)
+    const roleHasProjectViewAll = rolePermissions.includes(Permission.PROJECT_VIEW_ALL)
+
+    const hasProjectRoleAccess = Array.isArray(project.projectRoles) && project.projectRoles.some((role: any) =>
+      role.user?.toString() === userId.toString()
+    )
+
+    // For students, also check if they're enrolled in this course
+    const isEnrolledStudent = userRole === 'student' && userDoc.enrolledCourses?.some((enrollment: any) =>
+      enrollment.courseId?.toString() === projectId
+    )
+
+    const hasAccess = roleHasProjectViewAll ||
+                     project.teamMembers.some((member: any) => member.memberId?._id?.toString() === userId.toString() || member.memberId?.toString() === userId.toString()) ||
+                     project.createdBy._id.toString() === userId.toString() ||
+                     hasProjectRoleAccess ||
+                     isEnrolledStudent
+
+    if (!hasAccess) {
+      return NextResponse.json(
+        { error: 'Access denied to project' },
+        { status: 403 }
+      )
+    }
+
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      )
+    }
+
+    // Calculate progress based on course duration and elapsed time
+    const startDate = new Date(project.startDate)
+    const endDate = new Date(project.endDate)
+    const currentDate = new Date()
+    
+    const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    const elapsedDays = Math.ceil((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+    
+    // Progress is based on days elapsed, capped at 100%
+    const completedDays = Math.min(Math.max(0, elapsedDays), totalDays)
+    const completionPercentage = totalDays > 0 
+      ? Math.min(100, Math.round((completedDays / totalDays) * 100))
+      : 0
+
+    const progress = {
+      completionPercentage,
+      completedDays,
+      totalDays,
+      startDate: project.startDate,
+      endDate: project.endDate
+    }
+
+    const projectData = project.toObject()
+    // Cross-reference teamMembers with User collection for isActive === true
+    if (Array.isArray(projectData.teamMembers) && projectData.teamMembers.length > 0) {
+      const memberIds = projectData.teamMembers.map((tm: any) => tm.memberId?._id || tm.memberId).filter(Boolean)
+      const activeUsers = await User.find({ _id: { $in: memberIds }, isActive: true }).select('_id')
+      const activeUserIds = new Set(activeUsers.map((u: any) => u._id.toString()))
+      projectData.teamMembers = projectData.teamMembers.filter(
+        (tm: any) => {
+          const id = tm.memberId?._id?.toString() || tm.memberId?.toString()
+          return id && activeUserIds.has(id)
+        }
+      )
+    }
+    // Ensure externalLinks always exists with proper structure
+    if (!projectData.externalLinks) {
+      projectData.externalLinks = {
+        figma: [],
+        documentation: []
+      }
+    } else {
+      // Ensure arrays exist even if undefined
+      projectData.externalLinks = {
+        figma: Array.isArray(projectData.externalLinks.figma) ? projectData.externalLinks.figma : [],
+        documentation: Array.isArray(projectData.externalLinks.documentation) ? projectData.externalLinks.documentation : []
+      }
+    }
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...projectData,
+        progress
+      }
+    })
+
+  } catch (error) {
+    console.error('Get project error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await connectDB()
+
+    const authResult = await authenticateUser()
+    if ('error' in authResult) {
+      return NextResponse.json(
+        { error: authResult.error },
+        { status: authResult.status }
+      )
+    }
+
+    const { user } = authResult
+    const userId = user.id
+    const organizationId = user.organization
+    const projectId = params.id
+
+    // Check if user can update this project
+    const canUpdateProject = await PermissionService.hasPermission(userId, Permission.PROJECT_UPDATE, projectId)
+    if (!canUpdateProject) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to update project' },
+        { status: 403 }
+      )
+    }
+
+    const updateData = await request.json()
+
+    // Debug: Log received data
+
+    // Check for duplicate project name if name is being updated (excluding deleted projects and current project)
+    if (updateData.name && updateData.name.trim()) {
+      const existingProject = await Project.findOne({
+        name: updateData.name.trim(),
+        createdBy: userId,
+        organization: organizationId,
+        is_deleted: { $ne: true }, // Exclude deleted projects
+        _id: { $ne: projectId } // Exclude current project
+      })
+
+      if (existingProject) {
+        return NextResponse.json(
+          { error: 'A project with this name already exists' },
+          { status: 409 }
+        )
+      }
+    }
+
+    // Validate client data before building update object
+    if (updateData.clients !== undefined) {
+      if (!Array.isArray(updateData.clients)) {
+        return NextResponse.json(
+          { error: 'clients must be an array of client IDs' },
+          { status: 400 }
+        )
+      }
+      if (updateData.clients.length > 0) {
+        const clientId = updateData.clients[0]
+        if (typeof clientId !== 'string' || !Types.ObjectId.isValid(clientId)) {
+          return NextResponse.json(
+            { error: 'Invalid client ID provided' },
+            { status: 400 }
+          )
+        }
+      }
+    } else if (updateData.client !== undefined) {
+      if (updateData.client && !Types.ObjectId.isValid(updateData.client)) {
+        return NextResponse.json(
+          { error: 'Invalid client ID provided' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Build update object with proper handling for nested fields
+    const updateObject: any = { $set: {} }
+    
+    // Explicitly handle status field if provided
+    if (updateData.status !== undefined) {
+      updateObject.$set['status'] = updateData.status
+    }
+    
+    // Explicitly handle priority field if provided
+    if (updateData.priority !== undefined) {
+      updateObject.$set['priority'] = updateData.priority
+    }
+    
+    // Handle budget updates (nested object)
+    if (updateData.budget !== undefined) {
+      updateObject.$set['budget'] = updateData.budget
+    }
+
+    // Handle billable default toggle
+    if (updateData.isBillableByDefault !== undefined) {
+      updateObject.$set['isBillableByDefault'] = !!updateData.isBillableByDefault
+    }
+    
+    // Handle teamMembers array
+    if (updateData.teamMembers !== undefined) {
+      updateObject.$set['teamMembers'] = updateData.teamMembers
+    }
+    
+    // Handle client (single value, but may come as array from frontend)
+    if (updateData.clients !== undefined) {
+      if (Array.isArray(updateData.clients) && updateData.clients.length > 0) {
+        updateObject.$set['client'] = updateData.clients[0]
+      } else {
+        updateObject.$set['client'] = null
+      }
+    } else if (updateData.client !== undefined) {
+      updateObject.$set['client'] = updateData.client || null
+    }
+    
+    // Handle tags array
+    if (updateData.tags !== undefined) {
+      updateObject.$set['tags'] = updateData.tags
+    }
+    
+    // Handle groups array
+    if (updateData.groups !== undefined) {
+      updateObject.$set['groups'] = updateData.groups
+    }
+    
+    // Handle certificates array
+    if (updateData.certificates !== undefined) {
+      updateObject.$set['certificates'] = updateData.certificates.map((certId: string) => 
+        Types.ObjectId.isValid(certId) ? new Types.ObjectId(certId) : certId
+      )
+    }
+    
+    // Handle customFields object
+    if (updateData.customFields !== undefined) {
+      updateObject.$set['customFields'] = updateData.customFields
+    }
+    
+    // Handle date fields (convert string dates to Date objects)
+    if (updateData.startDate !== undefined) {
+      updateObject.$set['startDate'] = updateData.startDate 
+        ? new Date(updateData.startDate) 
+        : updateData.startDate
+    }
+    if (updateData.endDate !== undefined) {
+      updateObject.$set['endDate'] = updateData.endDate 
+        ? new Date(updateData.endDate) 
+        : updateData.endDate
+    }
+    
+    // Handle isDraft flag
+    if (updateData.isDraft !== undefined) {
+      updateObject.$set['isDraft'] = updateData.isDraft
+    }
+    
+    // Extract settings if present and handle nested updates
+    if (updateData.settings) {
+      if (updateData.settings.kanbanStatuses !== undefined) {
+        updateObject.$set['settings.kanbanStatuses'] = updateData.settings.kanbanStatuses
+      }
+      // Handle other settings fields
+      if (updateData.settings.allowTimeTracking !== undefined) {
+        updateObject.$set['settings.allowTimeTracking'] = updateData.settings.allowTimeTracking
+      }
+      if (updateData.settings.allowManualTimeSubmission !== undefined) {
+        updateObject.$set['settings.allowManualTimeSubmission'] = updateData.settings.allowManualTimeSubmission
+      }
+      if (updateData.settings.allowExpenseTracking !== undefined) {
+        updateObject.$set['settings.allowExpenseTracking'] = updateData.settings.allowExpenseTracking
+      }
+      if (updateData.settings.requireApproval !== undefined) {
+        updateObject.$set['settings.requireApproval'] = updateData.settings.requireApproval
+      }
+      if (updateData.settings.notifications) {
+        Object.keys(updateData.settings.notifications).forEach(key => {
+          updateObject.$set[`settings.notifications.${key}`] = updateData.settings.notifications[key]
+        })
+      }
+    }
+    
+    // Handle attachments array
+    if (updateData.attachments !== undefined) {
+      updateObject.$set['attachments'] = updateData.attachments.map((att: any) => ({
+        name: att.name,
+        url: att.url,
+        size: att.size,
+        type: att.type,
+        uploadedBy: att.uploadedById || att.uploadedBy || userId,
+        uploadedAt: att.uploadedAt ? new Date(att.uploadedAt) : new Date()
+      }))
+    }
+    
+    // Handle externalLinks object
+    if (updateData.externalLinks !== undefined) {
+      const processedExternalLinks = {
+        figma: Array.isArray(updateData.externalLinks.figma) 
+          ? updateData.externalLinks.figma.filter((link: string) => link && link.trim()).map((link: string) => link.trim())
+          : [],
+        documentation: Array.isArray(updateData.externalLinks.documentation) 
+          ? updateData.externalLinks.documentation.filter((link: string) => link && link.trim()).map((link: string) => link.trim())
+          : []
+      }
+      updateObject.$set['externalLinks'] = processedExternalLinks
+    }
+    
+    // Add other top-level fields to $set (excluding fields already handled above)
+    const excludedKeys = [
+      'settings', 
+      'status', 
+      'priority', 
+      'budget', 
+      'teamMembers', 
+      'clients', 
+      'client', 
+      'tags',
+      'groups',
+      'customFields',
+      'startDate',
+      'endDate',
+      'isDraft',
+      'attachments',
+      'externalLinks'
+    ] // Already handled above
+    Object.keys(updateData).forEach(key => {
+      if (!excludedKeys.includes(key) && updateData[key] !== undefined) {
+        updateObject.$set[key] = updateData[key]
+      }
+    })
+
+    // Always use $set operator for proper MongoDB updates
+    const finalUpdateData = updateObject
+
+    // Debug: Log final update data
+
+    // Find and update project (only update non-deleted projects)
+    const project = await Project.findOneAndUpdate(
+      {
+        _id: projectId,
+        organization: organizationId,
+        is_deleted: { $ne: true } // Only update non-deleted projects
+      },
+      finalUpdateData,
+      { new: true }
+    )
+      .populate('createdBy', 'firstName lastName email')
+      .populate('teamMembers.memberId', 'firstName lastName email')
+      .populate('client', 'firstName lastName email')
+
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      )
+    }
+
+    // Debug: Log updated project
+    // console.log('PUT /api/projects/[id] - Updated project certificates:', project.certificates)
+
+    return NextResponse.json({
+      success: true,
+      message: 'Project updated successfully',
+      data: project
+    })
+
+  } catch (error) {
+    console.error('Update project error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await connectDB()
+
+    const authResult = await authenticateUser()
+    if ('error' in authResult) {
+      return NextResponse.json(
+        { error: authResult.error },
+        { status: authResult.status }
+      )
+    }
+
+    const { user } = authResult
+    const userId = user.id
+    const organizationId = user.organization
+    const projectId = params.id
+
+    // Check if user can delete this project
+ 
+    const canDeleteProject = await PermissionService.hasPermission(userId, Permission.PROJECT_DELETE, projectId)
+    if (!canDeleteProject) {
+      return NextResponse.json(
+        { error: 'Insufficient permissions to delete project' },
+        { status: 403 }
+      )
+    }
+
+    // Find and delete project (only non-deleted projects)
+    const project = await Project.findOneAndDelete({
+      _id: projectId,
+      organization: organizationId,
+      is_deleted: { $ne: true } // Only delete non-deleted projects
+    })
+
+    if (!project) {
+      return NextResponse.json(
+        { error: 'Project not found' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Project deleted successfully'
+    })
+
+  } catch (error) {
+    console.error('Delete project error:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}

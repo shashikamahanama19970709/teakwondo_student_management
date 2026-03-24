@@ -1,0 +1,17 @@
+services:
+  kanvaro-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    environment:
+      - .env
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    command: npm run dev
