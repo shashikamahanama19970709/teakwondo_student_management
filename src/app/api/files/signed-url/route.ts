@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
  
     // Generate a temporary download authorization
     const downloadAuth = await b2.getDownloadAuthorization({
-      bucketId:'ab45037022e8dd819cc00a18',
+      bucketId:'fba53340a2f82d019cd00a18',
       fileNamePrefix: '', // Allow access to all files in bucket for now
       validDurationInSeconds: 4 * 60 * 60, // 4 hours
     });
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
     // URL-encode the file path to handle special characters like [, ], spaces
     const encodedPath = encodeURIComponent(fileKey);
 
-    const signedUrl = `https://f005.backblazeb2.com/file/HelpLineAcademyDB/${encodedPath}?Authorization=${authToken}`;
+    const signedUrl = `https://f005.backblazeb2.com/file/Taekwondo/${encodedPath}?Authorization=${authToken}`;
 
 
 

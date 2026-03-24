@@ -22,7 +22,7 @@ export async function GET(
 
         // Extract the file name from the URL
         // e.g., https://f005.backblazeb2.com/file/HelpLine/announcements/123.jpg
-        const bucketName = 'HelpLineAcademyDB';
+        const bucketName = 'Taekwondo';
         const splitStr = `/file/${bucketName}/`;
         const urlParts = decodedUrl.split(splitStr);
 

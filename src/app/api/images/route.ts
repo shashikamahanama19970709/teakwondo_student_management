@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
         
             
             // Extract the file path from the signed URL to generate a fresh server-side signed URL
-            const bucketName =  'HelpLineAcademyDB';
+            const bucketName =  'Taekwondo';
             const splitStr = `/file/${bucketName}/`;
             const urlParts = imageUrl.split(splitStr);
             
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
         }
 
         // For non-signed URLs, generate signed URL first
-        const bucketName =  'HelpLineAcademyDB';
+        const bucketName =  'Taekwondo';
         const splitStr = `/file/${bucketName}/`;
         const urlParts = imageUrl.split(splitStr);
 

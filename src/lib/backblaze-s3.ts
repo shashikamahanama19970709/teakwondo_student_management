@@ -28,7 +28,7 @@ export async function getUploadPresignedUrl(params: {
   contentType: string
   expiresIn?: number
 }): Promise<string> {
-  const bucket = 'HelpLineAcademyDB'
+  const bucket = 'Taekwondo'
   if (!bucket) {
     throw new Error('Missing Backblaze S3 bucket (B2_S3_BUCKET)')
   }

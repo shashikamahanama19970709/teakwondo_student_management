@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'File ID required' }, { status: 400 })
     }
 
-    const bucketName = 'HelpLineAcademyDB'
+    const bucketName = 'Taekwondo'
     if (!bucketName) {
       return NextResponse.json({ error: 'Bucket configuration missing' }, { status: 500 })
     }
