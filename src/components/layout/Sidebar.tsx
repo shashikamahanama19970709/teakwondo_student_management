@@ -66,20 +66,6 @@ const navigationItems = [
     roles: [Role.ADMIN, Role.LECTURER, Role.TEACHER]
   },
   {
-    id: 'course-management',
-    label: 'Course Management',
-    icon: BookOpen,
-    path: '/admin/course-management',
-    roles: [Role.ADMIN, Role.LECTURER, Role.TEACHER]
-  },
-    {
-    id: 'units',
-    label: 'Units',
-    icon: BookOpen,
-    path: '/units',
-    roles: [Role.ADMIN, Role.LECTURER, Role.TEACHER, Role.STUDENT]
-  },
-  {
     id: 'team',
     label: 'Team',
     icon: Users,
@@ -101,6 +87,13 @@ const navigationItems = [
         roles: [Role.ADMIN, Role.LECTURER, Role.TEACHER]
       }
     ]
+  },
+  {
+    id: 'subscriptions',
+    label: 'Subscriptions',
+    icon: Sliders,
+    path: '/admin/subscriptions',
+    roles: [Role.ADMIN]
   },
   {
     id: 'announcements',

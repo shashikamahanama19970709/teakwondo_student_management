@@ -8,6 +8,9 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { motion, useScroll, useSpring, AnimatePresence } from 'framer-motion'
 import { useTheme } from 'next-themes'
+import dynamic from 'next/dynamic'
+// Dynamically import the subscriptions section for code splitting
+const LandingSubscriptionsPage = dynamic(() => import('./subscriptions/page'), { ssr: false })
 import { Input } from '@/components/ui/Input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -1026,6 +1029,11 @@ export default function LandingPage() {
               </motion.div>
             </div>
           </div>
+        </section>
+
+        {/* Subscriptions Section */}
+        <section className="bg-white dark:bg-slate-900 px-4 py-16 sm:px-6 sm:py-20 lg:py-24">
+          <LandingSubscriptionsPage />
         </section>
 
         {/* Why Choose Help Line Academy Section */}
