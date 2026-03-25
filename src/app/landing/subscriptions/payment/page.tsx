@@ -1,37 +1,45 @@
 "use client"
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Loader2 } from 'lucide-react'
 
 export default function SubscriptionPaymentPage() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const subscriptionId = searchParams.get('id')
-  const [subscription, setSubscription] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <Loader2 className="animate-spin h-10 w-10 text-teal-600 mb-4" />
+        <div className="text-lg font-medium text-slate-700 dark:text-white">Loading subscription details...</div>
+      </div>
+    }>
+      <SubscriptionPaymentContent />
+    </Suspense>
+  );
+}
+
+function SubscriptionPaymentContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const subscriptionId = searchParams.get('id');
+  const [subscription, setSubscription] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (subscriptionId) {
       fetch(`/api/subscriptions?id=${subscriptionId}`)
         .then(res => res.json())
         .then(data => {
-          setSubscription(data.subscription || null)
-          setLoading(false)
-        })
+          setSubscription(data.subscription || null);
+          setLoading(false);
+        });
     } else {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [subscriptionId])
+  }, [subscriptionId]);
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="animate-spin h-10 w-10 text-teal-600 mb-4" />
-        <div className="text-lg font-medium text-slate-700 dark:text-white">Loading subscription details...</div>
-      </div>
-    )
+    return null;
   }
 
   if (!subscription) {
@@ -39,7 +47,7 @@ export default function SubscriptionPaymentPage() {
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <div className="text-lg font-medium text-red-600 dark:text-red-400">Subscription not found.</div>
       </div>
-    )
+    );
   }
 
   return (
@@ -64,5 +72,5 @@ export default function SubscriptionPaymentPage() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
