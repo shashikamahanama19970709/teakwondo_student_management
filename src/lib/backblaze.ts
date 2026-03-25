@@ -42,7 +42,7 @@ class BackblazeB2 {
   }
 
   private get bucketId(): string {
-    const bucketId = 'ab45037022e8dd819cc00a18';
+    const bucketId = 'fba53340a2f82d019cd00a18';
     if (!bucketId) {
       throw new Error('B2_BUCKET_ID environment variable is not set');
     }
@@ -161,7 +161,6 @@ class BackblazeB2 {
       }
 
       const uploadData: B2UploadUrlResponse = await uploadUrlResponse.json();
-
       // Upload file
       const uploadResponse = await fetch(uploadData.uploadUrl, {
         method: 'POST',
@@ -173,7 +172,6 @@ class BackblazeB2 {
         },
         body: fileBuffer as any,
       });
-
       if (!uploadResponse.ok) {
         throw new Error(`File upload failed: ${uploadResponse.status}`);
       }
@@ -211,7 +209,6 @@ class BackblazeB2 {
     }
 
     const data: B2UploadUrlResponse = await response.json();
-    console.log('upload url response:', data);
     return data;
   }
 
@@ -258,13 +255,7 @@ class BackblazeB2 {
         parts.push(fileBuffer.subarray(i, end));
       }
 
-      console.log('Starting large file upload to B2', {
-        fileName,
-        contentType,
-        totalSize,
-        partSize,
-        partCount: parts.length,
-      });
+     
 
       // Upload each part
       const partHashes: string[] = [];
